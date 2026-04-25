@@ -1,9 +1,13 @@
-🚀 GUÍA COMPLETA DE DESPLIEGUE: CLUSTER RoCEv2 Y TELEMETRÍA
-Sigue este orden de terminales en tu WSL. Sitúate siempre en ~/qemu-roce.
-________________________________________
+Entiendo perfectamente. Leer código y comandos mezclados en un documento de texto plano es un dolor de cabeza. Aquí tienes la guía de despliegue organizada, visualmente clara y estructurada para que tus compañeros no se pierdan entre terminales y scripts.
+
+🚀 GUÍA DE DESPLIEGUE: CLUSTER RoCEv2 Y TELEMETRÍA
+
+Nota importante: Realiza todos los pasos dentro de la carpeta ~/qemu-roce en tu terminal de WSL.
+
 FASE 1: Preparación del Host (WSL)
 1.1 Crear el Script de Red
-Terminal 1: Ejecuta nano start-topology.sh y pega este código:
+En la Terminal 1, ejecuta nano start-topology.sh y pega el siguiente código para configurar el bridge y las interfaces virtuales:
+
 Bash
 #!/bin/bash
 set -e
@@ -28,9 +32,15 @@ sudo sysctl -w net.ipv4.ip_forward=1 > /dev/null
 
 echo "=== Topología lista ==="
 bridge link show
-Cierra y guarda (Ctrl+O, Enter, Ctrl+X). Dale permisos: chmod +x start-topology.sh.
+
+Guardar: Ctrl+O, Enter, Ctrl+X.
+
+
+Permisos: chmod +x start-topology.sh.
+
 1.2 Crear el Script para VM3
-Terminal 1: Ejecuta nano start-mv3.sh y pega este código:
+En la Terminal 1, ejecuta nano start-mv3.sh y pega el código para inicializar la tercera máquina virtual:
+
 Bash
 #!/bin/bash
 BASE_DIR="$HOME/qemu-roce"
@@ -74,20 +84,33 @@ sudo qemu-system-x86_64 -name $VM_NAME -machine q35,accel=kvm -cpu host -m 2048 
     -drive file="$BASE_DIR/seed-$VM_NAME.iso",format=raw,if=virtio \
     -netdev tap,id=net0,ifname=$TAP_IF,script=no,downscript=no \
     -device virtio-net-pci,netdev=net0,mac=$MAC_ADDR -nographic -serial mon:stdio
-Cierra y guarda. Dale permisos: chmod +x start-mv3.sh.
-________________________________________
+
+Permisos: chmod +x start-mv3.sh.
+
 FASE 2: Arranque de la Topología
-Abre 5 pestañas de terminal y ejecuta un comando en cada una:
-1.	Terminal 1: sudo ./start-topology.sh
-2.	Terminal 2 (VM1): ./start-vm.sh 1
-3.	Terminal 3 (VM2): ./start-vm.sh 2
-4.	Terminal 4 (VM3): ./start-mv3.sh
-5.	Terminal 5 (Switch): ./start-switch.sh
-________________________________________
+Abre 5 pestañas de terminal y ejecuta un comando en cada una para iniciar el cluster:
+
+
+Terminal 1: sudo ./start-topology.sh 
+
+
+Terminal 2 (VM1): ./start-vm.sh 1 
+
+
+Terminal 3 (VM2): ./start-vm.sh 2 
+
+
+Terminal 4 (VM3): ./start-mv3.sh 
+
+
+Terminal 5 (Switch): ./start-switch.sh 
+
 FASE 3: Activación de Red (Consola QEMU)
-Loguéate en las ventanas negras de QEMU (user: user / pass: rdma).
+Inicia sesión en las ventanas de QEMU con usuario: user / pass: rdma.
+
 3.1 Configuración de Workers (VM1, VM2, VM3)
-En las tres máquinas, ejecuta nano setup-roce.sh y pega esto:
+En cada una de las tres máquinas, ejecuta nano setup-roce.sh e inserta el agente SNMP:
+
 Bash
 #!/bin/bash
 sudo apt update && sudo apt install snmpd snmp -y
@@ -142,29 +165,49 @@ if __name__ == "__main__": main()
 EOF
 sudo chmod +x /usr/local/bin/roce_agent.py
 sudo systemctl restart snmpd
-Ejecuta: chmod +x setup-roce.sh && ./setup-roce.sh.
+
+Activar: chmod +x setup-roce.sh && ./setup-roce.sh.
+
 3.2 Activación del Switch (Terminal 5)
-En la consola del switch, ejecuta para habilitar la IP de gestión:
+Habilita la IP de gestión en la consola del switch:
+
 Bash
 sudo ip addr add 10.10.0.10/24 dev enp0s2 && sudo ip link set enp0s2 up
-________________________________________
 FASE 4: Gestión y Telemetría (SSH)
-Abre 4 pestañas nuevas en WSL (Terminales 6 a 9) y conéctate:
-•	T6: ssh user@10.10.0.1
-•	T7: ssh user@10.10.0.2
-•	T8: ssh user@10.10.0.3
-•	T9: ssh user@10.10.0.10
+Abre 4 pestañas nuevas en WSL para conectarte remotamente:
+
+
+T6: ssh user@10.10.0.1 
+
+
+T7: ssh user@10.10.0.2 
+
+
+T8: ssh user@10.10.0.3 
+
+
+T9: ssh user@10.10.0.10 
+
 4.1 Configuración Final del Switch (Terminal 9)
-Dentro del SSH del Switch, configura el agente OVS:
-1.	sudo apt update && sudo apt install openvswitch-switch snmpd -y
-2.	sudo ovs-vsctl add-br br-roce
-3.	sudo nano /etc/snmp/snmpd.conf -> Borra todo y pega:
-Fragmento de código
+Dentro de la conexión SSH del Switch, configura el bridge y el agente OVS:
+
+
+sudo apt update && sudo apt install openvswitch-switch snmpd -y 
+
+
+sudo ovs-vsctl add-br br-roce 
+
+
+sudo nano /etc/snmp/snmpd.conf -> Borra todo y pega:
+
+Plaintext
 agentAddress udp:161
 rocommunity public 10.10.0.254
 rocommunity public localhost
 pass_persist .1.3.6.1.4.1.99999.3 /usr/local/bin/ovs_agent.py
-4.	sudo nano /usr/local/bin/ovs_agent.py -> Pega:
+
+sudo nano /usr/local/bin/ovs_agent.py -> Pega el agente OVS:
+
 Python
 #!/usr/bin/env python3
 import sys, os, subprocess, re
@@ -195,11 +238,19 @@ def main():
             if oid_req in metrics: print(oid_req); print("counter64"); print(metrics[oid_req])
             else: print("NONE")
 if __name__ == "__main__": main()
-5.	sudo chmod +x /usr/local/bin/ovs_agent.py && sudo systemctl restart snmpd
-________________________________________
+
+Reiniciar: sudo chmod +x /usr/local/bin/ovs_agent.py && sudo systemctl restart snmpd.
+
 FASE 5: Verificación
-1.	Generar tráfico (T6): ibv_rc_pingpong -d rxe0 -g 1 10.10.0.2 (con VM2 en escucha).
-2.	Desde Host (T1):
-o	snmpwalk -v2c -c public 10.10.0.1 .1.3.6.1.4.1.99999
-o	snmpwalk -v2c -c public 10.10.0.10 .1.3.6.1.4.1.99999.3
+
+Generar tráfico (T6): ibv_rc_pingpong -d rxe0 -g 1 10.10.0.2 (con VM2 en escucha).
+
+
+Consultar desde Host (T1): 
+
+
+snmpwalk -v2c -c public 10.10.0.1 .1.3.6.1.4.1.99999 
+
+
+snmpwalk -v2c -c public 10.10.0.10 .1.3.6.1.4.1.99999.3
 
